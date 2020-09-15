@@ -128,6 +128,13 @@
         connected, additional software to be installed, or disabling any existing
         security layers to measure.
       </para>
+      <para>
+        The HSI specification is primarily designed for consumer laptop, desktop
+        and server hardware, although some tests <emphasis>may</emphasis> still
+        make sense on embedded hardware such as mobile phones and other consumer
+        appliances.
+        It is not expected that embedded hardware will publish an HSI number.
+      </para>
     </refsect1>
 
     <refsect2 id="runtime-behaviour">
