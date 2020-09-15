@@ -267,6 +267,38 @@
       </para>
     </refsect2>
 
+    <refsect3 id="org.fwupd.hsi.Uefi.SecureBoot">
+      <title>UEFI SecureBoot</title>
+      <para>
+        UEFI Secure boot is a verification mechanism for ensuring that code
+        launched by firmware is trusted.
+      </para>
+      <para>
+        Secure use of UEFI Secure Boot requires that each binary loaded at
+        boot is validated against trusted certifictes.
+      </para>
+      <itemizedlist>
+        <listitem>
+          <para>
+            For HSI-1 SecureBoot must be available for use on the platform.
+            <emphasis>v1.5.0</emphasis>
+          </para>
+        </listitem>
+      </itemizedlist>
+      <note>
+        <para>
+          See also:
+          <itemizedlist>
+            <listitem>
+              <ulink url="https://wiki.ubuntu.com/UEFI/SecureBoot">
+                UEFI Wiki Entry
+              </ulink>
+            </listitem>
+          </itemizedlist>
+        </para>
+      </note>
+    </refsect3>
+
     <refsect3 id="org.fwupd.hsi.Spi.Bioswe">
       <title>BIOS Write Enable (BWE)</title>
       <para>
