@@ -168,7 +168,8 @@
       <para>
         This security level corresponds to the most basic of security protections
         considered essential by security professionals.
-        Any failures at this level would have critical security impact.
+        Any failures at this level would have critical security impact and could
+        likely be used to compromise the system firmware without opening the case.
       </para>
     </refsect2>
 
