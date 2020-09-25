@@ -1794,9 +1794,42 @@ fu_util_downgrade (FuUtilPrivate *priv, gchar **values, GError **error)
 }
 
 static gboolean
+fu_util_release_switch_branch (FuUtilPrivate *priv, FwupdRelease *rel, GError **error)
+{
+	const gchar *desc_markup = NULL;
+	g_autofree gchar *desc_plain = NULL;
+
+	/* get formatted text */
+	desc_markup = fwupd_release_get_description (rel);
+	if (desc_markup == NULL)
+		return TRUE;
+	desc_plain = fu_util_convert_description (desc_markup, error);
+	if (desc_plain == NULL)
+		return FALSE;
+
+	/* show and ask user to confirm */
+	fu_util_warning_box (desc_plain, 80);
+	if (!priv->assume_yes) {
+		/* ask for permission */
+		g_print ("\n%s [y|N]: ",
+			 /* TRANSLATORS: should the branch be changed */
+			 _("Do you understand the consequence of changing the firmware branch?"));
+		if (!fu_util_prompt_for_boolean (FALSE)) {
+			g_set_error_literal (error,
+					     FWUPD_ERROR,
+					     FWUPD_ERROR_NOTHING_TO_DO,
+					     "Declined branch switch");
+			return FALSE;
+		}
+	}
+	return TRUE;
+}
+
+static gboolean
 fu_util_reinstall (FuUtilPrivate *priv, gchar **values, GError **error)
 {
 	const gchar *remote_id;
+	const gchar *version;
 	g_autoptr(FwupdRelease) rel = NULL;
 	g_autoptr(GPtrArray) rels = NULL;
 	g_autoptr(FwupdDevice) dev = NULL;
@@ -1811,10 +1844,17 @@ fu_util_reinstall (FuUtilPrivate *priv, gchar **values, GError **error)
 					  NULL, error);
 	if (rels == NULL)
 		return FALSE;
+
+	/* allow specifying the specific version */
+	if (g_strv_length (values) > 1) {
+		version = values[1];
+	} else {
+		version = fu_device_get_version (dev);
+	}
 	for (guint j = 0; j < rels->len; j++) {
 		FwupdRelease *rel_tmp = g_ptr_array_index (rels, j);
 		if (fu_common_vercmp_full (fwupd_release_get_version (rel_tmp),
-					   fu_device_get_version (dev),
+					   version,
 					   fwupd_device_get_version_format (dev)) == 0) {
 			rel = g_object_ref (rel_tmp);
 			break;
@@ -1828,6 +1868,12 @@ fu_util_reinstall (FuUtilPrivate *priv, gchar **values, GError **error)
 			     fu_device_get_name (dev),
 			     fu_device_get_version (dev));
 		return FALSE;
+	}
+
+	/* we're switching branch */
+	if (fwupd_release_has_flag (rel, FWUPD_RELEASE_FLAG_IS_ALTERNATE_BRANCH)) {
+		if (!fu_util_release_switch_branch (priv, rel, error))
+			return FALSE;
 	}
 
 	/* update the console if composite devices are also updated */
@@ -2715,7 +2761,7 @@ main (int argc, char *argv[])
 		     fu_util_modify_config);
 	fu_util_cmd_array_add (cmd_array,
 		     "reinstall",
-		     "[DEVICE-ID|GUID]",
+		     "[DEVICE-ID|GUID] [VERSION]",
 		     /* TRANSLATORS: command description */
 		     _("Reinstall current firmware on the device."),
 		     fu_util_reinstall);
@@ -2890,6 +2936,7 @@ main (int argc, char *argv[])
 	if (is_interactive) {
 		if (!fwupd_client_set_feature_flags (priv->client,
 						     FWUPD_FEATURE_FLAG_CAN_REPORT |
+						     FWUPD_FEATURE_FLAG_SWITCH_BRANCH |
 						     FWUPD_FEATURE_FLAG_UPDATE_ACTION |
 						     FWUPD_FEATURE_FLAG_DETACH_ACTION,
 						     priv->cancellable, &error)) {

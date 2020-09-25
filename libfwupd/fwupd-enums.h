@@ -70,6 +70,7 @@ typedef enum {
  * @FWUPD_FEATURE_FLAG_CAN_REPORT:		Can upload a report of the update back to the server
  * @FWUPD_FEATURE_FLAG_DETACH_ACTION:		Can perform detach action, typically showing text
  * @FWUPD_FEATURE_FLAG_UPDATE_ACTION:		Can perform update action, typically showing text
+ * @FWUPD_FEATURE_FLAG_SWITCH_BRANCH:		Can switch the firmware branch
  *
  * The flags to the feature capabilities of the front-end client.
  **/
@@ -78,6 +79,7 @@ typedef enum {
 	FWUPD_FEATURE_FLAG_CAN_REPORT		= 1 << 0,	/* Since: 1.4.5 */
 	FWUPD_FEATURE_FLAG_DETACH_ACTION	= 1 << 1,	/* Since: 1.4.5 */
 	FWUPD_FEATURE_FLAG_UPDATE_ACTION	= 1 << 2,	/* Since: 1.4.5 */
+	FWUPD_FEATURE_FLAG_SWITCH_BRANCH	= 1 << 3,	/* Since: 1.5.0 */
 	/*< private >*/
 	FWUPD_FEATURE_FLAG_LAST
 } FwupdFeatureFlags;
@@ -179,6 +181,8 @@ typedef guint64 FwupdDeviceFlags;
  * @FWUPD_RELEASE_FLAG_IS_DOWNGRADE:		Is older than the device version
  * @FWUPD_RELEASE_FLAG_BLOCKED_VERSION:		Blocked as below device version-lowest
  * @FWUPD_RELEASE_FLAG_BLOCKED_APPROVAL:	Blocked as release not approved
+ * @FWUPD_RELEASE_FLAG_IS_CURRENT_BRANCH:	Is current branch when alternates available
+ * @FWUPD_RELEASE_FLAG_IS_ALTERNATE_BRANCH:	Is an alternate branch of firmware
  *
  * The release flags.
  **/
@@ -189,6 +193,8 @@ typedef guint64 FwupdDeviceFlags;
 #define FWUPD_RELEASE_FLAG_IS_DOWNGRADE		(1u << 3)	/* Since: 1.2.6 */
 #define FWUPD_RELEASE_FLAG_BLOCKED_VERSION	(1u << 4)	/* Since: 1.2.6 */
 #define FWUPD_RELEASE_FLAG_BLOCKED_APPROVAL	(1u << 5)	/* Since: 1.2.6 */
+#define FWUPD_RELEASE_FLAG_IS_CURRENT_BRANCH	(1u << 6)	/* Since: 1.5.0 */
+#define FWUPD_RELEASE_FLAG_IS_ALTERNATE_BRANCH	(1u << 7)	/* Since: 1.5.0 */
 #define FWUPD_RELEASE_FLAG_UNKNOWN		G_MAXUINT64	/* Since: 1.2.6 */
 typedef guint64 FwupdReleaseFlags;
 

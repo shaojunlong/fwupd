@@ -1337,6 +1337,13 @@ fu_util_release_to_string (FwupdRelease *rel, guint idt)
 		fu_common_string_append_kv (str, idt + 1, _("Remote ID"),
 					    fwupd_release_get_remote_id (rel));
 	}
+	if (fwupd_release_get_branch (rel) != NULL ||
+	    fwupd_release_has_flag (rel, FWUPD_RELEASE_FLAG_IS_CURRENT_BRANCH)) {
+		/* TRANSLATORS: the stream of firmware, e.g. nonfree or open-source */
+		fu_common_string_append_kv (str, idt + 1, _("Branch"),
+					    fwupd_release_get_remote_id (rel) != NULL ?
+					    fwupd_release_get_remote_id (rel) : "default");
+	}
 	if (fwupd_release_get_summary (rel) != NULL) {
 		/* TRANSLATORS: one line summary of device */
 		fu_common_string_append_kv (str, idt + 1, _("Summary"),
