@@ -1,12 +1,14 @@
 /*
  * Copyright (C) 2016-2017 Richard Hughes <richard@hughsie.com>
  * Copyright (C) 2020 boger wang <boger@goodix.com>
- * 
+ *
  * SPDX-License-Identifier: LGPL-2.1+
  */
 
 #include "config.h"
+
 #include <string.h>
+
 #include "fu-chunk.h"
 #include "fu-goodixmoc-common.h"
 #include "fu-goodixmoc-device.h"
@@ -18,8 +20,8 @@ struct _FuGoodixMocDevice {
 G_DEFINE_TYPE (FuGoodixMocDevice, fu_goodixmoc_device, FU_TYPE_USB_DEVICE)
 
 #define GX_USB_BULK_EP_IN		(3 | 0x80)
-#define GX_USB_BULK_EP_OUT 		(1 | 0x00)
-#define GX_USB_INTERFACE		0 
+#define GX_USB_BULK_EP_OUT		(1 | 0x00)
+#define GX_USB_INTERFACE		0
 
 #define GX_USB_DATAIN_TIMEOUT		2000  /* ms */
 #define GX_USB_DATAOUT_TIMEOUT		200   /* ms */
@@ -89,7 +91,7 @@ goodixmoc_device_cmd_recv (GUsbDevice  *usbdevice,
 			   GxfpCmdResp *presponse,
 			   gboolean     data_reply,
 			   GError     **error)
-{ 
+{
 	gboolean ret = FALSE;
 	GxfpPkgHeader header = { 0, };
 	guint32 crc_actual = 0;
@@ -152,7 +154,7 @@ goodixmoc_device_cmd_recv (GUsbDevice  *usbdevice,
 					     "Invalid value");
 			return FALSE;
 		}
-		
+
 		/* continue after ack received */
 		if (header.cmd0 == GX_CMD_ACK && data_reply)
 			continue;
@@ -166,7 +168,7 @@ goodixmoc_device_cmd_recv (GUsbDevice  *usbdevice,
 static gboolean
 fu_goodixmoc_device_cmd_xfer (FuGoodixMocDevice	*device,
 			      guint8		 cmd0,
-			      guint8 	         cmd1,
+			      guint8	         cmd1,
 			      GxPkgType		 type,
 			      GByteArray	*request,
 			      GxfpCmdResp       *presponse,
@@ -183,8 +185,8 @@ static gchar *
 fu_goodixmoc_device_get_version (FuGoodixMocDevice *self, GError **error)
 {
 	GxfpCmdResp reponse = { 0, };
-	guint8 dummy = 0;
 	gchar ver[9] = { 0 };
+	guint8 dummy = 0;
 
 	g_autoptr(GByteArray) request = g_byte_array_new ();
 	fu_byte_array_append_uint8 (request, dummy);
@@ -195,14 +197,14 @@ fu_goodixmoc_device_get_version (FuGoodixMocDevice *self, GError **error)
 					  TRUE,
 					  error))
 		return NULL;
-	if (!fu_memcpy_safe ((guint8*)ver, sizeof(ver), 0x0, 
-			      reponse.version_info.fwversion, 
+	if (!fu_memcpy_safe ((guint8*)ver, sizeof(ver), 0x0,
+			      reponse.version_info.fwversion,
 			      sizeof(reponse.version_info.fwversion),
 			      0x0,
-			      sizeof(reponse.version_info.fwversion),		
+			      sizeof(reponse.version_info.fwversion),
 			      error))
 		return NULL;
-	return g_strdup (ver);
+	return g_strndup (ver, sizeof(ver));
 }
 
 static gboolean
@@ -224,7 +226,11 @@ fu_goodixmoc_device_update_init(FuGoodixMocDevice *self, GError **error)
 
 	/* check result */
 	if (reponse.result != 0) {
-		g_prefix_error (error, "initial update failed: ");
+		g_set_error (error,
+			     FWUPD_ERROR,
+			     FWUPD_ERROR_WRITE,
+			     "initial update failed [%x]",
+			     reponse.result);
 		return FALSE;
 	}
 	return TRUE;
@@ -236,9 +242,9 @@ fu_goodixmoc_device_attach (FuDevice *device, GError **error)
 	FuGoodixMocDevice *self = FU_GOODIXMOC_DEVICE(device);
 	GxfpCmdResp reponse = { 0, };
 	g_autoptr(GByteArray) request = g_byte_array_new ();
-	fu_device_set_status (device, FWUPD_STATUS_DEVICE_RESTART);
 
 	/* reset device */
+	fu_device_set_status (device, FWUPD_STATUS_DEVICE_RESTART);
 	if (!fu_goodixmoc_device_cmd_xfer (self, GX_CMD_RESET, 0x03,
 					   GX_PKG_TYPE_EOP,
 					   request,
@@ -251,7 +257,11 @@ fu_goodixmoc_device_attach (FuDevice *device, GError **error)
 
 	/* check result */
 	if (reponse.result != 0) {
-		g_prefix_error (error, "failed to reset device: ");
+		g_set_error (error,
+			     FWUPD_ERROR,
+			     FWUPD_ERROR_WRITE,
+			     "failed to reset device [%x]",
+			     reponse.result);
 		return FALSE;
 	}
 	fu_device_add_flag (device, FWUPD_DEVICE_FLAG_WAIT_FOR_REPLUG);
@@ -262,13 +272,9 @@ static gboolean
 fu_goodixmoc_device_open (FuUsbDevice *device, GError **error)
 {
 	GUsbDevice *usb_device = fu_usb_device_get_dev (device);
-	if (!g_usb_device_claim_interface (usb_device, GX_USB_INTERFACE,
-					   G_USB_DEVICE_CLAIM_INTERFACE_BIND_KERNEL_DRIVER,
-					   error))
-		return FALSE;
-
-	/* success */
-	return TRUE;
+	return g_usb_device_claim_interface (usb_device, GX_USB_INTERFACE,
+					     G_USB_DEVICE_CLAIM_INTERFACE_BIND_KERNEL_DRIVER,
+					     error);
 }
 
 static gboolean
@@ -276,12 +282,12 @@ fu_goodixmoc_device_setup (FuDevice *device, GError **error)
 {
 	FuGoodixMocDevice *self = FU_GOODIXMOC_DEVICE(device);
 	g_autofree gchar *version = NULL;
+
 	version = fu_goodixmoc_device_get_version (self, error);
 	if (version == NULL) {
 		g_prefix_error (error, "failed to get firmware version: ");
 		return FALSE;
 	}
-	g_debug ("obtained fwver using API '%s'", version);
 	fu_device_set_version (device, version);
 
 	/* success */
@@ -289,18 +295,18 @@ fu_goodixmoc_device_setup (FuDevice *device, GError **error)
 }
 
 static gboolean
-fu_goodixmoc_device_write_firmware (FuDevice	     *device,
-				    FuFirmware 	     *firmware,
+fu_goodixmoc_device_write_firmware (FuDevice *device,
+				    FuFirmware *firmware,
 				    FwupdInstallFlags flags,
-				    GError 	    **error)
+				    GError  **error)
 {
 	FuGoodixMocDevice *self = FU_GOODIXMOC_DEVICE(device);
-	gboolean wait_data_reply = FALSE;
 	GxPkgType pkg_eop = GX_PKG_TYPE_NORMAL;
 	GxfpCmdResp reponse = { 0, };
+	gboolean wait_data_reply = FALSE;
 	g_autoptr(GBytes) fw = NULL;
-	g_autoptr(GPtrArray) chunks = NULL;
 	g_autoptr(GError) error_local = NULL;
+	g_autoptr(GPtrArray) chunks = NULL;
 
 	/* get default image */
 	fw = fu_firmware_get_image_default_bytes (firmware, error);
@@ -351,7 +357,11 @@ fu_goodixmoc_device_write_firmware (FuDevice	     *device,
 
 		/* check update status */
 		if (wait_data_reply && reponse.result != 0) {
-			g_prefix_error (error, "failed to verify firmware: ");
+			g_set_error (error,
+				     FWUPD_ERROR,
+				     FWUPD_ERROR_WRITE,
+				     "failed to verify firmware [%x]",
+				     reponse.result);
 			return FALSE;
 		}
 

@@ -12,13 +12,13 @@
 /*
  *  protocol
  */
-#define GX_CMD_ACK 		0xAA
-#define GX_CMD_VERSION 		0xD0
-#define GX_CMD_RESET 		0xB4
-#define GX_CMD_UPGRADE 		0x80
-#define GX_CMD_UPGRADE_INIT 	0x00
-#define GX_CMD_UPGRADE_DATA 	0x01
-#define GX_CMD1_DEFAULT 	0x00
+#define GX_CMD_ACK		0xAA
+#define GX_CMD_VERSION		0xD0
+#define GX_CMD_RESET		0xB4
+#define GX_CMD_UPGRADE		0x80
+#define GX_CMD_UPGRADE_INIT	0x00
+#define GX_CMD_UPGRADE_DATA	0x01
+#define GX_CMD1_DEFAULT	0x00
 
 #define GX_SIZE_CRC32		4
 
@@ -67,20 +67,15 @@ typedef struct {
 	guint8  rev_crc8;
 } __attribute__((__packed__)) GxfpPkgHeader;
 
-void 
-fu_goodixmoc_build_header (GxfpPkgHeader *pheader,
-			   guint16	  len,
-			   guint8	  cmd0,
-			   guint8	  cmd1,
-			   GxPkgType	  type);
-
-gboolean 
-fu_goodixmoc_parse_header (guint8 	 *buf,
-			   guint32 	  bufsz,
-			   GxfpPkgHeader *pheader);
-
-gboolean 
-fu_goodixmoc_parse_body (guint8	      cmd,
-			 guint8	     *buf,
-			 guint32      bufsz,
-			 GxfpCmdResp *presp);
+void	 fu_goodixmoc_build_header	(GxfpPkgHeader	*pheader,
+					 guint16	 len,
+					 guint8		 cmd0,
+					 guint8		 cmd1,
+					 GxPkgType	 type);
+gboolean fu_goodixmoc_parse_header	(guint8		*buf,
+					 guint32	 bufsz,
+					 GxfpPkgHeader	*pheader);
+gboolean fu_goodixmoc_parse_body	(guint8		 cmd,
+					 guint8		*buf,
+					 guint32	 bufsz,
+					 GxfpCmdResp	*presp);

@@ -4,7 +4,7 @@ Goodix Fingerprint Sensor Support
 Introduction
 ------------
 
-The plugin used for update firmware for fingerprint sensors.
+The plugin used for update firmware for fingerprint sensors from Goodix.
 
 Firmware Format
 ---------------

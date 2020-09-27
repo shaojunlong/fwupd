@@ -6,15 +6,16 @@
  */
 
 #include "config.h"
-#include "fu-goodixmoc-common.h"
-#include "fu-common.h"
 
-void 
+#include "fu-common.h"
+#include "fu-goodixmoc-common.h"
+
+void
 fu_goodixmoc_build_header (GxfpPkgHeader *pheader,
 			   guint16	  len,
 			   guint8	  cmd0,
 			   guint8	  cmd1,
-		  	   GxPkgType	  type)
+			   GxPkgType	  type)
 {
 	static guint8 dummy_seq = 0;
 	g_assert (pheader);
@@ -31,7 +32,7 @@ fu_goodixmoc_build_header (GxfpPkgHeader *pheader,
 gboolean
 fu_goodixmoc_parse_header (guint8 *buf, guint32 bufsz, GxfpPkgHeader *pheader)
 {
-	if (!buf || !pheader)
+	if (buf == NULL || pheader == NULL)
 		return FALSE;
 	if (bufsz < sizeof(*pheader))
 		return FALSE;

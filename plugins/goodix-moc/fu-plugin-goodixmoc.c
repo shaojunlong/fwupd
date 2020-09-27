@@ -1,11 +1,12 @@
 /*
  * Copyright (C) 2015-2017 Richard Hughes <richard@hughsie.com>
  * Copyright (C) 2020 boger wang <boger@goodix.com>
- * 
+ *
  * SPDX-License-Identifier: LGPL-2.1+
  */
 
 #include "config.h"
+
 #include "fu-plugin-vfuncs.h"
 #include "fu-hash.h"
 #include "fu-goodixmoc-device.h"
