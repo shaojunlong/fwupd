@@ -7,6 +7,7 @@
 #include "config.h"
 
 #include "fu-common.h"
+#include "fu-common-version.h"
 
 #include "fu-bcm57xx-common.h"
 #include "fu-bcm57xx-stage1-image.h"
@@ -25,11 +26,53 @@ fu_bcm57xx_stage1_image_parse (FuFirmwareImage *image,
 			       FwupdInstallFlags flags,
 			       GError **error)
 {
+	gsize bufsz = 0x0;
+	guint32 fwversion = 0;
+	const guint8 *buf = g_bytes_get_data (fw, &bufsz);
 	g_autoptr(GBytes) fw_nocrc = NULL;
+
+	/* verify CRC */
 	if ((flags & FWUPD_INSTALL_FLAG_FORCE) == 0) {
 		if (!fu_bcm57xx_verify_crc (fw, error))
 			return FALSE;
 	}
+
+	/* get version number */
+	if (!fu_common_read_uint32_safe (buf, bufsz, BCM_NVRAM_STAGE1_VERSION,
+					 &fwversion, G_BIG_ENDIAN, error))
+		return FALSE;
+	if (fwversion != 0x0) {
+		g_autofree gchar *tmp = NULL;
+		tmp = fu_common_version_from_uint32 (fwversion, FWUPD_VERSION_FORMAT_TRIPLET);
+		fu_firmware_image_set_version (image, tmp);
+	} else {
+		gchar verbuf[12] = { '\0' };
+		guint32 veraddr = 0x0;
+		g_autofree gchar *tmp = NULL;
+
+		/* fall back to the string, e.g. '5719-v1.43' */
+		if (!fu_common_read_uint32_safe (buf, bufsz, BCM_NVRAM_STAGE1_VERADDR,
+						 &veraddr, G_BIG_ENDIAN, error))
+			return FALSE;
+		if (veraddr < BCM_PHYS_ADDR_DEFAULT + sizeof(verbuf)) {
+			g_set_error (error,
+				     FWUPD_ERROR,
+				     FWUPD_ERROR_NOT_SUPPORTED,
+				     "version address 0x%x less than physical 0x%x",
+				     veraddr, (guint) BCM_PHYS_ADDR_DEFAULT);
+			return FALSE;
+		}
+		if (!fu_memcpy_safe ((guint8 *) verbuf, sizeof(verbuf), 0x0,	/* dst */
+				     buf, bufsz, veraddr - BCM_PHYS_ADDR_DEFAULT, /* src */
+				     sizeof(verbuf), error))
+			return FALSE;
+
+		/* don't assume this is NULL terminated */
+		tmp = g_strndup (verbuf, sizeof(verbuf));
+		if (tmp != NULL && tmp[0] != '\0')
+			fu_firmware_image_set_version (image, tmp);
+	}
+
 	fw_nocrc = g_bytes_new_from_bytes (fw, 0x0, g_bytes_get_size (fw) - sizeof(guint32));
 	fu_firmware_image_set_bytes (image, fw_nocrc);
 	return TRUE;

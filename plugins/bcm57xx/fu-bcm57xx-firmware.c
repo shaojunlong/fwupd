@@ -548,7 +548,7 @@ fu_bcm57xx_firmware_get_model (FuBcm57xxFirmware *self)
 static void
 fu_bcm57xx_firmware_init (FuBcm57xxFirmware *self)
 {
-	self->phys_addr = 0x8003800;
+	self->phys_addr = BCM_PHYS_ADDR_DEFAULT;
 	self->source_size = BCM_FIRMWARE_SIZE;
 	self->source_padchar = 0xff;
 	fu_firmware_add_flag (FU_FIRMWARE (self), FU_FIRMWARE_FLAG_DEDUPE_ID);

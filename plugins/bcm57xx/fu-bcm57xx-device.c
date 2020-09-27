@@ -123,22 +123,50 @@ fu_bcm57xx_device_bar_write (FuBcm57xxDevice *self, guint bar, gsize offset, gui
 	BARRIER();
 }
 
-typedef enum {
-	FU_BCM57XX_NVRAM_MODE_DISABLED,
-	FU_BCM57XX_NVRAM_MODE_ENABLED,
-	FU_BCM57XX_NVRAM_MODE_ENABLED_WRITE,
-} FuBcm57xxNvramMode;
-
 static gboolean
-fu_bcm57xx_device_nvram_set_mode (FuBcm57xxDevice *self,
-				  FuBcm57xxNvramMode mode,
-				  GError **error)
+fu_bcm57xx_device_nvram_disable (FuBcm57xxDevice *self, GError **error)
 {
 	RegNVMAccess_t tmp;
+
+	/* not required */
+	if (self->ethtool_iface != NULL)
+		return TRUE;
+
 	tmp.r32 = fu_bcm57xx_device_bar_read (self, FU_BCM57XX_BAR_DEVICE, REG_NVM_ACCESS);
-	tmp.bits.Enable = mode == FU_BCM57XX_NVRAM_MODE_ENABLED ||
-			  mode == FU_BCM57XX_NVRAM_MODE_ENABLED_WRITE;
-	tmp.bits.WriteEnable = mode == FU_BCM57XX_NVRAM_MODE_ENABLED_WRITE;
+	tmp.bits.Enable = FALSE;
+	tmp.bits.WriteEnable = FALSE;
+	fu_bcm57xx_device_bar_write (self, FU_BCM57XX_BAR_DEVICE, REG_NVM_ACCESS, tmp.r32);
+	return TRUE;
+}
+
+static gboolean
+fu_bcm57xx_device_nvram_enable (FuBcm57xxDevice *self, GError **error)
+{
+	RegNVMAccess_t tmp;
+
+	/* not required */
+	if (self->ethtool_iface != NULL)
+		return TRUE;
+
+	tmp.r32 = fu_bcm57xx_device_bar_read (self, FU_BCM57XX_BAR_DEVICE, REG_NVM_ACCESS);
+	tmp.bits.Enable = TRUE;
+	tmp.bits.WriteEnable = FALSE;
+	fu_bcm57xx_device_bar_write (self, FU_BCM57XX_BAR_DEVICE, REG_NVM_ACCESS, tmp.r32);
+	return TRUE;
+}
+
+static gboolean
+fu_bcm57xx_device_nvram_enable_write (FuBcm57xxDevice *self, GError **error)
+{
+	RegNVMAccess_t tmp;
+
+	/* not required */
+	if (self->ethtool_iface != NULL)
+		return TRUE;
+
+	tmp.r32 = fu_bcm57xx_device_bar_read (self, FU_BCM57XX_BAR_DEVICE, REG_NVM_ACCESS);
+	tmp.bits.Enable = TRUE;
+	tmp.bits.WriteEnable = TRUE;
 	fu_bcm57xx_device_bar_write (self, FU_BCM57XX_BAR_DEVICE, REG_NVM_ACCESS, tmp.r32);
 	return TRUE;
 }
@@ -148,6 +176,10 @@ fu_bcm57xx_device_nvram_acquire_lock (FuBcm57xxDevice *self, GError **error)
 {
 	RegNVMSoftwareArbitration_t tmp = { 0 };
 	g_autoptr(GTimer) timer = g_timer_new ();
+
+	/* not required */
+	if (self->ethtool_iface != NULL)
+		return TRUE;
 
 	tmp.bits.ReqSet1 = 1;
 	fu_bcm57xx_device_bar_write (self, FU_BCM57XX_BAR_DEVICE,
@@ -174,6 +206,11 @@ static gboolean
 fu_bcm57xx_device_nvram_release_lock (FuBcm57xxDevice *self, GError **error)
 {
 	RegNVMSoftwareArbitration_t tmp = { 0 };
+
+	/* not required */
+	if (self->ethtool_iface != NULL)
+		return TRUE;
+
 	tmp.r32 = 0;
 	tmp.bits.ReqClr1 = 1;
 	fu_bcm57xx_device_bar_write (self, FU_BCM57XX_BAR_DEVICE,
@@ -214,10 +251,113 @@ fu_bcm57xx_device_nvram_clear_done (FuBcm57xxDevice *self)
 }
 
 static gboolean
+fu_bcm57xx_device_nvram_read_ethtool (FuBcm57xxDevice *self,
+				      guint32 address,
+				      guint32 *buf,
+				      guint32 bufsz_wrds,
+				      GError **error)
+{
+#ifdef HAVE_ETHTOOL_H
+	gsize eepromsz;
+	gint rc = -1;
+	struct ethtool_drvinfo drvinfo = { 0 };
+	struct ifreq ifr = { 0 };
+	g_autofree struct ethtool_eeprom *eeprom = NULL;
+
+	/* get driver info */
+	drvinfo.cmd = ETHTOOL_GDRVINFO;
+	strncpy (ifr.ifr_name, self->ethtool_iface, IFNAMSIZ - 1);
+	ifr.ifr_data = (char *) &drvinfo;
+#ifdef HAVE_IOCTL_H
+	rc = ioctl (self->ethtool_fd, SIOCETHTOOL, &ifr);
+#else
+	g_set_error (error,
+		     FWUPD_ERROR,
+		     FWUPD_ERROR_NOT_SUPPORTED,
+		     "Not supported as <sys/ioctl.h> not found");
+	return FALSE;
+#endif
+	if (rc < 0) {
+		g_set_error (error,
+			     G_IO_ERROR,
+			     G_IO_ERROR_FAILED,
+			     "cannot get driver information [%i]", rc);
+		return FALSE;
+	}
+	g_debug ("FW version %s", drvinfo.fw_version);
+
+	/* sanity check */
+	if (drvinfo.eedump_len != BCM_FIRMWARE_SIZE) {
+		g_set_error (error,
+			     G_IO_ERROR,
+			     G_IO_ERROR_FAILED,
+			     "EEPROM size invalid, got 0x%x, expected 0x%x",
+			     drvinfo.eedump_len, (guint) BCM_FIRMWARE_SIZE);
+		return FALSE;
+	}
+	if (address + bufsz_wrds * sizeof(guint32) > drvinfo.eedump_len) {
+		g_set_error (error,
+			     G_IO_ERROR,
+			     G_IO_ERROR_FAILED,
+			     "tried to read outside of EEPROM size [0x%x]",
+			     drvinfo.eedump_len);
+		return FALSE;
+	}
+
+	/* read EEPROM (NVRAM) data */
+	eepromsz = sizeof(struct ethtool_eeprom) + bufsz_wrds * sizeof(guint32);
+	eeprom = (struct ethtool_eeprom *) g_malloc0 (eepromsz);
+	eeprom->cmd = ETHTOOL_GEEPROM;
+	eeprom->len = bufsz_wrds * sizeof(guint32);
+	eeprom->offset = address;
+	ifr.ifr_data = (char *) eeprom;
+#ifdef HAVE_IOCTL_H
+	rc = ioctl (self->ethtool_fd, SIOCETHTOOL, &ifr);
+#else
+	g_set_error (error,
+		     FWUPD_ERROR,
+		     FWUPD_ERROR_NOT_SUPPORTED,
+		     "Not supported as <sys/ioctl.h> not found");
+	return FALSE;
+#endif
+	if (rc < 0) {
+		g_set_error (error,
+			     G_IO_ERROR,
+			     G_IO_ERROR_FAILED,
+			     "cannot read eeprom [%i]", rc);
+		return FALSE;
+	}
+
+	/* copy back data */
+	if (!fu_memcpy_safe ((guint8 *) buf, bufsz_wrds * sizeof(guint32), 0x0,	/* dst */
+			     (guint8 *) eeprom, eepromsz,			/* src */
+			     G_STRUCT_OFFSET(struct ethtool_eeprom, data),
+			     bufsz_wrds * sizeof(guint32), error))
+		return FALSE;
+
+	/* success */
+	return TRUE;
+#else
+	g_set_error (error,
+		     FWUPD_ERROR,
+		     FWUPD_ERROR_NOT_SUPPORTED,
+		     "Not supported as <linux/ethtool.h> not found");
+	return FALSE;
+#endif
+}
+
+static gboolean
 fu_bcm57xx_device_nvram_read (FuBcm57xxDevice *self,
 			      guint32 address, guint32 *buf, gsize bufsz,
 			      GError **error)
 {
+	/* simpler! */
+	if (self->ethtool_iface != NULL) {
+		return fu_bcm57xx_device_nvram_read_ethtool (self, address,
+							     buf, bufsz,
+							     error);
+	}
+
 	for (guint i = 0; i < bufsz; i++) {
 		RegNVMCommand_t tmp = { 0 };
 		fu_bcm57xx_device_nvram_clear_done (self);
@@ -246,6 +386,15 @@ fu_bcm57xx_device_nvram_write (FuBcm57xxDevice *self,
 			       guint32 address, const guint32 *buf, gsize bufsz,
 			       GError **error)
 {
+	/* not supported */
+	if (self->ethtool_iface != NULL) {
+		g_set_error (error,
+			     FWUPD_ERROR,
+			     FWUPD_ERROR_NOT_SUPPORTED,
+			     "Not supported; detach required");
+		return FALSE;
+	}
+
 	for (guint i = 0; i < bufsz; i++) {
 		RegNVMCommand_t tmp = { 0 };
 		fu_bcm57xx_device_nvram_clear_done (self);
@@ -309,6 +458,7 @@ fu_bcm57xx_device_dump_firmware (FuDevice *device, GError **error)
 	FuBcm57xxDevice *self = FU_BCM57XX_DEVICE (device);
 	gsize bufsz_dwrds = BCM_FIRMWARE_SIZE / sizeof(guint32);
 	g_autofree guint32 *buf_dwrds = g_new0 (guint32, bufsz_dwrds);
+	g_autoptr(FuDeviceLocker) locker = NULL;
 
 	/* not detached */
 	fu_bcm57xx_device_ensure_ethtool_iface (self);
@@ -322,11 +472,13 @@ fu_bcm57xx_device_dump_firmware (FuDevice *device, GError **error)
 
 	/* read from hardware */
 	fu_device_set_status (device, FWUPD_STATUS_DEVICE_READ);
-	if (!fu_bcm57xx_device_nvram_set_mode (self, FU_BCM57XX_NVRAM_MODE_ENABLED, error))
-		return NULL;
+	locker = fu_device_locker_new_full (self,
+					    (FuDeviceLockerFunc) fu_bcm57xx_device_nvram_enable,
+					    (FuDeviceLockerFunc) fu_bcm57xx_device_nvram_disable,
+					    error);
+	if (locker == NULL)
+		return FALSE;
 	if (!fu_bcm57xx_device_nvram_read (self, 0x0, buf_dwrds, bufsz_dwrds, error))
-		return NULL;
-	if (!fu_bcm57xx_device_nvram_set_mode (self, FU_BCM57XX_NVRAM_MODE_DISABLED, error))
 		return NULL;
 	return g_bytes_new (buf_dwrds, bufsz_dwrds * sizeof(guint32));
 }
@@ -418,6 +570,7 @@ fu_bcm57xx_device_write_firmware (FuDevice *device,
 	gsize bufsz_dwrds = BCM_FIRMWARE_SIZE / sizeof(guint32);
 	g_autofree guint32 *buf_dwrds = g_new0 (guint32, bufsz_dwrds);
 	g_autoptr(FuDeviceLocker) locker = NULL;
+	g_autoptr(FuDeviceLocker) locker2 = NULL;
 	g_autoptr(GBytes) blob = NULL;
 
 	/* build the images into one linear blob of the correct size */
@@ -445,11 +598,13 @@ fu_bcm57xx_device_write_firmware (FuDevice *device,
 					    error);
 	if (locker == NULL)
 		return FALSE;
-	if (!fu_bcm57xx_device_nvram_set_mode (self, FU_BCM57XX_NVRAM_MODE_ENABLED_WRITE, error))
+	locker2 = fu_device_locker_new_full (self,
+					     (FuDeviceLockerFunc) fu_bcm57xx_device_nvram_enable_write,
+					     (FuDeviceLockerFunc) fu_bcm57xx_device_nvram_disable,
+					     error);
+	if (locker2 == NULL)
 		return FALSE;
 	if (!fu_bcm57xx_device_nvram_write (self, 0x0, buf_dwrds, bufsz_dwrds, error))
-		return FALSE;
-	if (!fu_bcm57xx_device_nvram_set_mode (self, FU_BCM57XX_NVRAM_MODE_DISABLED, error))
 		return FALSE;
 
 	/* reset APE */
@@ -461,124 +616,47 @@ fu_bcm57xx_device_write_firmware (FuDevice *device,
 }
 
 static gboolean
-fu_bcm57xx_device_ethtool_read (FuBcm57xxDevice *self,
-				guint32 address, guint32 *buf, guint32 bufsz_wrds,
-				GError **error)
-{
-#ifdef HAVE_ETHTOOL_H
-	gsize eepromsz;
-	gint rc = -1;
-	struct ethtool_drvinfo drvinfo = { 0 };
-	struct ifreq ifr = { 0 };
-	g_autofree struct ethtool_eeprom *eeprom = NULL;
-
-	/* get driver info */
-	drvinfo.cmd = ETHTOOL_GDRVINFO;
-	strncpy (ifr.ifr_name, self->ethtool_iface, IFNAMSIZ - 1);
-	ifr.ifr_data = (char *) &drvinfo;
-#ifdef HAVE_IOCTL_H
-	rc = ioctl (self->ethtool_fd, SIOCETHTOOL, &ifr);
-#else
-	g_set_error (error,
-		     FWUPD_ERROR,
-		     FWUPD_ERROR_NOT_SUPPORTED,
-		     "Not supported as <sys/ioctl.h> not found");
-	return FALSE;
-#endif
-	if (rc < 0) {
-		g_set_error (error,
-			     G_IO_ERROR,
-			     G_IO_ERROR_FAILED,
-			     "cannot get driver information [%i]", rc);
-		return FALSE;
-	}
-	g_debug ("FW version %s", drvinfo.fw_version);
-
-	/* sanity check */
-	if (drvinfo.eedump_len != BCM_FIRMWARE_SIZE) {
-		g_set_error (error,
-			     G_IO_ERROR,
-			     G_IO_ERROR_FAILED,
-			     "EEPROM size invalid, got 0x%x, expected 0x%x",
-			     drvinfo.eedump_len, (guint) BCM_FIRMWARE_SIZE);
-		return FALSE;
-	}
-	if (address + bufsz_wrds * sizeof(guint32) > drvinfo.eedump_len) {
-		g_set_error (error,
-			     G_IO_ERROR,
-			     G_IO_ERROR_FAILED,
-			     "tried to read outside of EEPROM size [0x%x]",
-			     drvinfo.eedump_len);
-		return FALSE;
-	}
-
-	/* read EEPROM (NVRAM) data */
-	eepromsz = sizeof(struct ethtool_eeprom) + bufsz_wrds * sizeof(guint32);
-	eeprom = (struct ethtool_eeprom *) g_malloc0 (eepromsz);
-	eeprom->cmd = ETHTOOL_GEEPROM;
-	eeprom->len = bufsz_wrds * sizeof(guint32);
-	eeprom->offset = address;
-	ifr.ifr_data = (char *) eeprom;
-#ifdef HAVE_IOCTL_H
-	rc = ioctl (self->ethtool_fd, SIOCETHTOOL, &ifr);
-#else
-	g_set_error (error,
-		     FWUPD_ERROR,
-		     FWUPD_ERROR_NOT_SUPPORTED,
-		     "Not supported as <sys/ioctl.h> not found");
-	return FALSE;
-#endif
-	if (rc < 0) {
-		g_set_error (error,
-			     G_IO_ERROR,
-			     G_IO_ERROR_FAILED,
-			     "cannot read eeprom [%i]", rc);
-		return FALSE;
-	}
-
-	/* copy back data */
-	if (!fu_memcpy_safe ((guint8 *) buf, bufsz_wrds * sizeof(guint32), 0x0,	/* dst */
-			     (guint8 *) eeprom, eepromsz,			/* src */
-			     G_STRUCT_OFFSET(struct ethtool_eeprom, data),
-			     bufsz_wrds * sizeof(guint32), error))
-		return FALSE;
-
-	/* success */
-	return TRUE;
-#else
-	g_set_error (error,
-		     FWUPD_ERROR,
-		     FWUPD_ERROR_NOT_SUPPORTED,
-		     "Not supported as <linux/ethtool.h> not found");
-	return FALSE;
-#endif
-}
-
-/* HELP! this needs to be implemented */
-#define BCM_NVRAM_STAGE1_FWVER		0x0
-
-static gboolean
 fu_bcm57xx_device_setup (FuDevice *device, GError **error)
 {
 	FuBcm57xxDevice *self = FU_BCM57XX_DEVICE (device);
 	guint32 fwversion = 0;
+	g_autofree gchar *fwversion_str = NULL;
+	g_autoptr(FuDeviceLocker) locker = NULL;
+
+	fu_bcm57xx_device_ensure_ethtool_iface (self);
+	locker = fu_device_locker_new_full (self,
+					    (FuDeviceLockerFunc) fu_bcm57xx_device_nvram_enable,
+					    (FuDeviceLockerFunc) fu_bcm57xx_device_nvram_disable,
+					    error);
+	if (locker == NULL)
+		return FALSE;
 
 	/* get NVRAM version */
-	fu_bcm57xx_device_ensure_ethtool_iface (self);
-	if (self->ethtool_iface != NULL) {
-		if (!fu_bcm57xx_device_ethtool_read (self, BCM_NVRAM_STAGE1_FWVER, &fwversion, 1, error))
-			return FALSE;
+	if (!fu_bcm57xx_device_nvram_read (self, BCM_NVRAM_STAGE1_BASE + BCM_NVRAM_STAGE1_VERSION,
+					   &fwversion, 1, error))
+		return FALSE;
+	if (fwversion == 0x0) {
+		fwversion_str = fu_common_version_from_uint32 (GUINT32_FROM_BE(fwversion),
+							       FWUPD_VERSION_FORMAT_TRIPLET);
+		fu_device_set_version (device, fwversion_str);
 	} else {
-		if (!fu_bcm57xx_device_nvram_set_mode (self, FU_BCM57XX_NVRAM_MODE_ENABLED, error))
+		guint32 bufver[3] = { 0x0 };
+		guint32 veraddr = 0;
+
+		/* fall back to the string, e.g. '5719-v1.43' */
+		if (!fu_bcm57xx_device_nvram_read (self,
+						   BCM_NVRAM_STAGE1_BASE + BCM_NVRAM_STAGE1_VERADDR,
+						   &veraddr, 1, error))
 			return FALSE;
-		if (!fu_bcm57xx_device_nvram_read (self, BCM_NVRAM_STAGE1_FWVER, &fwversion, 1, error))
+		if (!fu_bcm57xx_device_nvram_read (self,
+						   GUINT32_FROM_BE(veraddr) - BCM_PHYS_ADDR_DEFAULT,
+						   bufver, 3, error))
 			return FALSE;
-		if (!fu_bcm57xx_device_nvram_set_mode (self, FU_BCM57XX_NVRAM_MODE_DISABLED, error))
-			return FALSE;
+		fwversion_str = g_strndup ((const gchar *) bufver, sizeof(bufver));
+		if (fwversion_str != NULL && fwversion_str[0] != '\0')
+			fu_device_set_version (device, fwversion_str);
 	}
 
-	/* Set from NVM 0x096; firmware version and upper 16 bits of manufacturing date */
-	g_debug ("fwversion=0x%08x", fwversion);
 	return TRUE;
 }
 

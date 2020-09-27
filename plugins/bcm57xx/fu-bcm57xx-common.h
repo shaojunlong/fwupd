@@ -10,6 +10,8 @@
 
 #define BCM_VENDOR_BROADCOM			0x14E4
 #define BCM_FIRMWARE_SIZE			0x80000
+#define BCM_PHYS_ADDR_DEFAULT			0x08003800
+
 #define BCM_NVRAM_MAGIC				0x669955AA
 
 /* offsets into BAR[0] */
@@ -51,6 +53,9 @@
 #define BCM_NVRAM_VPD_SZ			0x100
 
 #define BCM_NVRAM_INFO2_SZ			0x8c
+
+#define BCM_NVRAM_STAGE1_VERADDR		0x08
+#define BCM_NVRAM_STAGE1_VERSION		0x0C
 
 typedef union {
 	guint32 r32;
